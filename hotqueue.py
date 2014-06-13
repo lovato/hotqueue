@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 """HotQueue is a Python library that allows you to use Redis as a message queue
 within your Python programs.
 """
@@ -15,7 +14,7 @@ from redis import Redis
 
 __all__ = ['HotQueue']
 
-__version__ = '0.2.7'
+__version__ = '0.2.7.dev.0.0.1'
 
 
 def key_for_name(name):
@@ -40,10 +39,14 @@ class HotQueue(object):
         :attr:`host`, :attr:`port`, :attr:`db`
     """
     
-    def __init__(self, name, serializer=pickle, **kwargs):
+    def __init__(self, name, serializer=pickle, redis_connection=None, **kwargs):
+        self.group_name = kwargs.pop("group", "hotqueue")
         self.name = name
         self.serializer = serializer
-        self.__redis = Redis(**kwargs)
+        if redis_connection:
+            self.__redis = redis_connection
+        else:
+            self.__redis = Redis(**kwargs)
     
     def __len__(self):
         return self.__redis.llen(self.key)
@@ -51,12 +54,16 @@ class HotQueue(object):
     @property
     def key(self):
         """Return the key name used to store this queue in Redis."""
-        return key_for_name(self.name)
+        return "%s:%s" % (self.group_name, self.name)
     
     def clear(self):
         """Clear the queue of all messages, deleting the Redis key."""
         self.__redis.delete(self.key)
-    
+
+    def clear_value(self, value):
+        """Removes any occurence of an item from queue"""
+        self.__redis.lrem(self.key, 0, value)
+
     def consume(self, **kwargs):
         """Return a generator that yields whenever a message is waiting in the
         queue. Will block otherwise. Example:
@@ -103,7 +110,22 @@ class HotQueue(object):
         if msg is not None and self.serializer is not None:
             msg = self.serializer.loads(msg)
         return msg
-    
+
+    def put_again(self, *msgs):
+        """Put one or more messages onto the queue. Used to requeue an element if it fails. Example:
+
+        >>> queue.put_again("my message")
+        >>> queue.put_again("another message")
+
+        To put messages onto the queue in bulk, which can be significantly
+        faster if you have a large number of messages:
+
+        >>> queue.put_again("my message", "another message", "third message")
+        """
+        if self.serializer is not None:
+            msgs = map(self.serializer.dumps, msgs)
+        self.__redis.lpush(self.key, *msgs)
+
     def put(self, *msgs):
         """Put one or more messages onto the queue. Example:
         
