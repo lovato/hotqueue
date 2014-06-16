@@ -93,17 +93,6 @@ def check_uuid(fn):
     return decorated_view
 
 
-def get_consumer_id(request,login=False):
-    if app.session_cookie_name in request.cookies:
-        consumer_id = request.cookies[app.session_cookie_name]
-    else:
-        if login:
-            consumer_id = ""+str(uuid4())
-        else:
-            abort(403)
-    return consumer_id
-
-
 def is_unacked_old(queue):
     timestamp = queue.split(':')[-1]
     if (time.time() - float(timestamp)) >= 60: #seconds
