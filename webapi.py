@@ -1,85 +1,14 @@
 from flask import Flask, request, make_response, abort
-from uuid import uuid4, UUID
-from hotqueue import HotQueue
-from flask import jsonify
+from hotqueue import HotQueue, MessagePackage
 
 from functools import wraps
+from flask import jsonify
+
+from uuid import uuid4, UUID
 import time
 
 app = Flask(__name__)
-app.secret_key = 'nhuta'
-
-class Message(object):
-
-    _timestamp = None
-    _payload = None
-    _originalqueue = None
-    _id = None
-    _sender = None
-    _retries = 1
-    _reservation_id = None
-    _expiration = 0
-
-    def __init__(self, payload=None, sender=None, originalqueue=None):
-        if payload is not None:
-            self._timestamp = time.time()
-            self._id = str(uuid4())
-            self._payload = payload
-            self._sender = sender
-            self._retries = 1
-            self._originalqueue = originalqueue
-
-    def get_payload(self):
-        return self._payload
-
-    def get_originalqueue(self):
-        return self._originalqueue
-
-    def get_id(self):
-        return self._id
-
-    def set_expiration(self):
-        self._expiration = float(self._timestamp) + 60
-        return True
-
-    def get_expiration(self):
-        return self._expiration
-
-    def set_reservation_id(self, id):
-        self._reservation_id = id
-        return True
-
-    def get_sender(self):
-        return self._sender
-
-    def get_timestamp(self):
-        return self._timestamp
-
-    def get_retries(self):
-        return self._retries
-
-    def inc_retries(self):
-        self._retries = self._retries + 1
-        return True
-
-    def is_old(self):
-        if (time.time() - self._timestamp) >= 60: #seconds
-            return True
-        return False
-
-    def json(self):
-        # {
-        #     "body": "<body of the message, as specified in the insert call>",
-        #     "createdAt": <timestamp of when this message was inserted,
-        #     "deliveryCount": <number of redeliveries of this message>,
-        #     "expiration": <timestamp of when the current reservation expires>,
-        #     "messageId": "<id of the message, same as returned by the insert call>",
-        #     "queueName": "<name of the queue, same as specified in the reserve call>",
-        #     "reservationId": "<id of this reservation, can be used in the return message call>"
-        # }
-        return jsonify(body=self._payload,createdAt=int(self._timestamp*1000),deliveryCount=self._retries,expiration=int(self._expiration*1000),
-                       messageId=self._id, queueName=self._originalqueue, reservationId=self._reservation_id)
-
+app.secret_key = 'hotqueue_secret'
 
 def check_uuid(fn):
     @wraps(fn)
@@ -104,17 +33,17 @@ def is_unacked_old(queue):
 @app.route("/queues/<queuename>/messages/<message>", methods=['PUT'])
 def put(queuename,message=None):
     returncode = 200
-    message_envelope = None
+    result = []
     if not message:
         message = str(request.form['body'])
     if message:
-        consumer_id = str(uuid4())
         queue = HotQueue(queuename, host="localhost", port=6379, db=0)
-        message_envelope = Message(message,consumer_id,queuename)
-        queue.put(message_envelope)
+        put_status = MessagePackage()
+        put_status = queue.put(message)
+        result.append(put_status)
     else:
         returncode = 400
-    return message_envelope.json(), returncode
+    return str(","), returncode
 
 # @app.route("/queues", methods=['GET']) lista as queues
 # @app.route("/queue/<queuename>", methods=['GET']) detalhes da queue
