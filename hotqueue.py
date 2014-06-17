@@ -56,6 +56,12 @@ class HotQueue(object):
         """Return the key name used to store this queue in Redis."""
         return "%s:%s" % (self.group_name, self.name)
     
+    def get_queues(self):
+        return self.__redis.keys("hotqueue:*")
+
+    def get_unackedqueues(self,wildcard="*"):
+        return self.__redis.keys("hotqueue:unacked:"+wildcard)
+
     def clear(self):
         """Clear the queue of all messages, deleting the Redis key."""
         self.__redis.delete(self.key)
