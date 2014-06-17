@@ -1,1 +1,2 @@
-redis>=2.0.0flask
+redis>=2.0.0
+flask
