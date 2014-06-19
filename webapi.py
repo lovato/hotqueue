@@ -3,6 +3,7 @@ from hotqueue import HotQueue, MessagePackage
 
 from functools import wraps
 from flask import jsonify
+import simplejson as json
 
 from uuid import uuid4, UUID
 import time
@@ -33,17 +34,15 @@ def is_unacked_old(queue):
 @app.route("/queues/<queuename>/messages/<message>", methods=['PUT'])
 def put(queuename,message=None):
     returncode = 200
-    result = []
     if not message:
         message = str(request.form['body'])
     if message:
         queue = HotQueue(queuename, host="localhost", port=6379, db=0)
         put_status = MessagePackage()
         put_status = queue.put(message)
-        result.append(put_status)
     else:
         returncode = 400
-    return str(","), returncode
+    return json.dumps(put_status), returncode
 
 # @app.route("/queues", methods=['GET']) lista as queues
 # @app.route("/queue/<queuename>", methods=['GET']) detalhes da queue
