@@ -125,24 +125,9 @@ class HotQueue(object):
                 msg = msg[1]
         else:
             msg = self.__redis.lpop(self.key)
-        if msg is not None and self.serializer is not None:
-            msg = self.serializer.loads(msg)
+        # if msg is not None and self.serializer is not None:
+        #     msg = self.serializer.loads(msg)
         return msg
-
-    def put_again(self, *msgs):
-        """Put one or more messages onto the queue. Used to requeue an element if it fails. Example:
-
-        >>> queue.put_again("my message")
-        >>> queue.put_again("another message")
-
-        To put messages onto the queue in bulk, which can be significantly
-        faster if you have a large number of messages:
-
-        >>> queue.put_again("my message", "another message", "third message")
-        """
-        if self.serializer is not None:
-            msgs = map(self.serializer.dumps, msgs)
-        self.__redis.lpush(self.key, *msgs)
 
     def put(self, *msgs):
         msgs_packeted = []
@@ -164,6 +149,21 @@ class HotQueue(object):
         self.__redis.rpush(self.key, *msgs_packeted)
         return msgs_packeted
     
+    def put_again(self, *msgs):
+        """Put one or more messages onto the queue. Used to requeue an element if it fails. Example:
+
+        >>> queue.put_again("my message")
+        >>> queue.put_again("another message")
+
+        To put messages onto the queue in bulk, which can be significantly
+        faster if you have a large number of messages:
+
+        >>> queue.put_again("my message", "another message", "third message")
+        """
+        # if self.serializer is not None:
+        #     msgs = map(self.serializer.dumps, msgs)
+        self.__redis.lpush(self.key, *msgs)
+
     def worker(self, *args, **kwargs):
         """Decorator for using a function as a queue worker. Example:
         
@@ -199,10 +199,11 @@ class HotQueue(object):
 
 class MessagePackage(object):
 
-    def __init__(self, payload=None, sender=None, originalqueue=None):
+    def __init__(self, payload=None, sender=None, originalqueue=None, serializer=pickle):
+        self.serializer = serializer
         self._timestamp = time.time()
         self._id = str(uuid4())
-        self._payload = payload
+        self.set_payload(payload)
         self._sender = sender
         self._delivery_count = 1 #starts with the first delivery that will happen
         self._reservation_id = None
@@ -229,6 +230,14 @@ class MessagePackage(object):
     def set_reservation_id(self, id):
         self._reservation_id = id
         return True
+
+    def get_payload(self):
+        # return self.serializer.loads(self._payload)
+        return self._payload
+
+    def set_payload(self,payload):
+        # self._payload = self.serializer.dumps(payload)
+        self._payload = payload
 
     def get_sender(self):
         return self._sender
