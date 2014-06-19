@@ -5,10 +5,11 @@ within your Python programs.
 
 from __future__ import unicode_literals
 from functools import wraps
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
+# try:
+#     import cPickle as pickle
+# except ImportError:
+#     import pickle
+import dill as pickle
 
 from redis import Redis
 from uuid import uuid4, UUID
@@ -125,12 +126,15 @@ class HotQueue(object):
                 msg = msg[1]
         else:
             msg = self.__redis.lpop(self.key)
-        # if msg is not None and self.serializer is not None:
-        #     msg = self.serializer.loads(msg)
-        return msg
+        hq_message = HQMessage()
+        if msg is not None and self.serializer is not None:
+            msg = self.serializer.loads(msg)
+        hq_message = msg
+        return hq_message
 
     def put(self, *msgs):
-        msgs_packeted = []
+        hq_message_list = []
+        hq_message_list_raw = []
         """Put one or more messages onto the queue. Example:
         
         >>> queue.put("my message")
@@ -142,12 +146,17 @@ class HotQueue(object):
         >>> queue.put("my message", "another message", "third message")
         """
         for msg in msgs:
-            message_envelope = MessagePackage(msg,str(uuid4()),self.name)
-            msgs_packeted.append(message_envelope.to_json())
+            hq_message = HQMessage(msg,str(uuid4()),self.name)
+            if self.serializer is not None:
+                hq_message_list.append(self.serializer.dumps(hq_message))
+            else:
+                hq_message_list.append(hq_message)
+            hq_message_list_raw.append(hq_message)
+
         # if self.serializer is not None:
-        #     msgs_packeted = map(self.serializer.dumps, *msgs_packeted)
-        self.__redis.rpush(self.key, *msgs_packeted)
-        return msgs_packeted
+        #     hq_message_list = map(self.serializer.dumps, *hq_message_list)
+        self.__redis.rpush(self.key, *hq_message_list)
+        return hq_message_list_raw
     
     def put_again(self, *msgs):
         """Put one or more messages onto the queue. Used to requeue an element if it fails. Example:
@@ -197,7 +206,7 @@ class HotQueue(object):
         return decorator
 
 
-class MessagePackage(object):
+class HQMessage(object):
 
     def __init__(self, payload=None, sender=None, originalqueue=None, serializer=pickle):
         self.serializer = serializer
@@ -210,6 +219,14 @@ class MessagePackage(object):
         self._expiration = 0
         self._originalqueue = originalqueue
         self._origin_ipaddr = None
+
+    def __eq__(self,othermessage):
+        try:
+            a = self.to_json()
+            b = othermessage.to_json()
+            return a == b
+        except:
+            return False
 
     def get_payload(self):
         return self._payload

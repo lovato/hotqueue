@@ -56,17 +56,18 @@ def get(queuename):
     message_envelope = None
     reservation_id = str(uuid4())
     queue = HotQueue(queuename, host="localhost", port=6379, db=0)
-    message_envelope = Message()
+    message_envelope = MessagePackage()
     message_envelope = queue.get()
     if message_envelope:
-        timestamp = time.time()
-        unacked_message = HotQueue("unacked:"+reservation_id+":"+str(timestamp), host="localhost", port=6379, db=0)
-        unacked_message.put(message_envelope)
-        message_envelope.set_reservation_id(reservation_id)
-        message_envelope.set_expiration()
+        pass
+        #timestamp = time.time()
+        #unacked_message = HotQueue("unacked:"+reservation_id+":"+str(timestamp), host="localhost", port=6379, db=0)
+        #unacked_message.put(message_envelope)
+        #message_envelope.set_reservation_id(reservation_id)
+        #message_envelope.set_expiration()
     else:
         returncode = 204
-    return message_envelope.json(), returncode
+    return message_envelope, returncode
 
 
 @app.route("/messages/ack/<reservation_uuid>", methods=['DELETE'])
