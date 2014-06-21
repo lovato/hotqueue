@@ -1,5 +1,5 @@
 from flask import Flask, request, make_response, abort
-from hotqueue import HotQueue, MessagePackage
+from hotqueue import HotQueue, HQMessage
 
 from functools import wraps
 from flask import jsonify
@@ -38,11 +38,11 @@ def put(queuename,message=None):
         message = str(request.form['body'])
     if message:
         queue = HotQueue(queuename, host="localhost", port=6379, db=0)
-        put_status = MessagePackage()
-        put_status = queue.put(message)
+        put_status = HQMessage()
+        put_status = queue.put(message)[0]
     else:
         returncode = 400
-    return json.dumps(put_status), returncode
+    return put_status.to_json(), returncode
 
 # @app.route("/queues", methods=['GET']) lista as queues
 # @app.route("/queue/<queuename>", methods=['GET']) detalhes da queue
@@ -53,21 +53,17 @@ def put(queuename,message=None):
 @app.route("/queues/<queuename>/messages", methods=['GET'])
 def get(queuename):
     returncode = 200
-    message_envelope = None
+    return_hqmessage = None
     reservation_id = str(uuid4())
     queue = HotQueue(queuename, host="localhost", port=6379, db=0)
-    message_envelope = MessagePackage()
-    message_envelope = queue.get()
-    if message_envelope:
-        pass
-        #timestamp = time.time()
-        #unacked_message = HotQueue("unacked:"+reservation_id+":"+str(timestamp), host="localhost", port=6379, db=0)
-        #unacked_message.put(message_envelope)
-        #message_envelope.set_reservation_id(reservation_id)
-        #message_envelope.set_expiration()
+    hqmessage = HQMessage()
+    hqmessage = queue.get()
+    if hqmessage:
+        return_hqmessage = hqmessage.to_json()
     else:
         returncode = 204
-    return message_envelope, returncode
+        return_hqmessage = ''
+    return return_hqmessage, returncode
 
 
 @app.route("/messages/ack/<reservation_uuid>", methods=['DELETE'])

@@ -118,18 +118,26 @@ class HotQueue(object):
         :param timeout: when using :attr:`block`, if no msg is available
             for :attr:`timeout` in seconds, give up and return ``None``
         """
+        processId = str(uuid4())
+        process_queue = key_for_name("processing:"+processId+":"+str(time.time()+5))
         if block:
             if timeout is None:
                 timeout = 0
-            msg = self.__redis.blpop(self.key, timeout=timeout)
+            msg = self.__redis.brpop(self.key, timeout=timeout)
             if msg is not None:
                 msg = msg[1]
         else:
-            msg = self.__redis.lpop(self.key)
+            msg = self.__redis.rpop(self.key)
+        self.__redis.lpush(process_queue, msg) # try *rpoplpush instead of this
         hq_message = HQMessage()
+        msg_tmp = msg
         if msg is not None and self.serializer is not None:
-            msg = self.serializer.loads(msg)
-        hq_message = msg
+            msg_tmp = self.serializer.loads(msg)
+        hq_message = msg_tmp
+        if msg:
+            hq_message.reserve_message()
+            self.__redis.rpush("unacked:"+hq_message.get_senderId()+":"+str(hq_message.get_expiration()), msg)
+        self.__redis.delete(process_queue)
         return hq_message
 
     def put(self, *msgs):
@@ -146,7 +154,7 @@ class HotQueue(object):
         >>> queue.put("my message", "another message", "third message")
         """
         for msg in msgs:
-            hq_message = HQMessage(msg,str(uuid4()),self.name)
+            hq_message = HQMessage(msg,self.name)
             if self.serializer is not None:
                 hq_message_list.append(self.serializer.dumps(hq_message))
             else:
@@ -155,7 +163,7 @@ class HotQueue(object):
 
         # if self.serializer is not None:
         #     hq_message_list = map(self.serializer.dumps, *hq_message_list)
-        self.__redis.rpush(self.key, *hq_message_list)
+        self.__redis.lpush(self.key, *hq_message_list)
         return hq_message_list_raw
     
     def put_again(self, *msgs):
@@ -171,7 +179,7 @@ class HotQueue(object):
         """
         # if self.serializer is not None:
         #     msgs = map(self.serializer.dumps, msgs)
-        self.__redis.lpush(self.key, *msgs)
+        self.__redis.rpush(self.key, *msgs)
 
     def worker(self, *args, **kwargs):
         """Decorator for using a function as a queue worker. Example:
@@ -208,72 +216,96 @@ class HotQueue(object):
 
 class HQMessage(object):
 
-    def __init__(self, payload=None, sender=None, originalqueue=None, serializer=pickle):
-        self.serializer = serializer
-        self._timestamp = time.time()
-        self._id = str(uuid4())
-        self.set_payload(payload)
-        self._sender = sender
-        self._delivery_count = 1 #starts with the first delivery that will happen
-        self._reservation_id = None
-        self._expiration = 0
-        self._originalqueue = originalqueue
-        self._origin_ipaddr = None
+    _default_expiration = 60
+    messageId = ''
+    createdAt = 0
+    body = ''
+    reservationId = ''
+    expiration = 0
+    deliveryCount = 0
+    queueName = ''
+    senderId = ''
+    originIPAddress = None
+    senderName = None
+
+    def __init__(self, body=None, originalQueue=None, senderName=None, originIPAddress=None):
+        self.body = body
+        self.createdAt = time.time()
+        self.messageId = str(uuid4())
+        self.reservationId = None
+        self.expiration = 0
+        self.deliveryCount = 0
+        self.queueName = originalQueue
+        self.senderId = str(uuid4())
+        self.originIPAddress = originIPAddress
+        self.senderName = senderName
+
+    # def __iter__(self):
+    #     for each in self.__dict__.keys():
+    #         print each
+    #         yield self.__getattribute__(each)
+
 
     def __eq__(self,othermessage):
         try:
-            a = self.to_json()
-            b = othermessage.to_json()
-            return a == b
+            check_msgId = self.get_messageId() == othermessage.get_messageId()
+            check_body = self.get_body() == othermessage.get_body()
+            check_createdAt = self.get_createdAt() == othermessage.get_createdAt()
+            return check_msgId and check_body and check_createdAt
         except:
             return False
 
-    def get_payload(self):
-        return self._payload
+    def get_body(self):
+        return self.body
 
-    def get_originalqueue(self):
-        return self._originalqueue
+    def set_body(self,body):
+        self.body = body
+
+    def get_queueName(self):
+        return self.queueName
 
     def get_id(self):
-        return self._id
+        return self.messageId
+    def get_messageId(self):
+        return self.messageId
 
     def set_expiration(self):
-        self._expiration = float(self._timestamp) + 60
+        self.expiration = time.time() + self._default_expiration
         return True
 
     def get_expiration(self):
-        return self._expiration
+        return self.expiration
 
-    def set_reservation_id(self, id):
-        self._reservation_id = id
+    def set_reservationId(self):
+        self.reservationId = str(uuid4())
         return True
 
-    def get_payload(self):
-        # return self.serializer.loads(self._payload)
-        return self._payload
+    def get_senderId(self):
+        return self.senderId
 
-    def set_payload(self,payload):
-        # self._payload = self.serializer.dumps(payload)
-        self._payload = payload
+    def get_createdAt(self):
+        return self.createdAt
 
-    def get_sender(self):
-        return self._sender
+    def get_deliveryCount(self):
+        return self.deliveryCount
 
-    def get_timestamp(self):
-        return self._timestamp
-
-    def get_delivery_count(self):
-        return self._delivery_count
-
-    def get_delivery_count(self):
-        return self._delivery_count
-
-    def inc_delivery_count(self):
-        self._delivery_count = self._delivery_count + 1
+    def inc_deliveryCount(self):
+        self.deliveryCount = self.deliveryCount + 1
         return True
+
+    def reserve_message(self):
+        self.set_reservationId()        
+        self.inc_deliveryCount()
+        self.set_expiration()
+
+    def ack(self):
+        pass
+
+    def nack(self):
+        pass
 
     def is_old(self):
-        if (time.time() - self._timestamp) >= 60: #seconds
+        if (time.time() - self.createdAt) >= self._default_expiration: #seconds
             return True
         return False
 
@@ -288,11 +320,11 @@ class HQMessage(object):
         "reservationId": "<id of this reservation, can be used in the return message call>"
         """
         result = {}
-        result['body']=self._payload
-        result['createdAt']=int(self._timestamp*1000) #millis
-        result['deliveryCount']=self._delivery_count
-        result['expiration']=int(self._expiration*1000) #millis
-        result['messageId']=self._id
-        result['queueName']=self._originalqueue
-        result['reservationId']=self._reservation_id
+        result['body']=self.body
+        result['createdAt']=int(self.createdAt*1000) #millis
+        result['deliveryCount']=self.deliveryCount
+        result['expiration']=int(self.expiration*1000) #millis
+        result['messageId']=self.messageId
+        result['queueName']=self.queueName
+        result['reservationId']=self.reservationId
         return json.dumps(result, ensure_ascii=False)
