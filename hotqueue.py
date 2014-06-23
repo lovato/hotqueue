@@ -163,21 +163,6 @@ class HotQueue(object):
         self.__redis.lpush(self.key, *hq_message_list)
         return hq_message_list_raw
     
-    def put_again(self, *msgs):
-        """Put one or more messages onto the queue. Used to requeue an element if it fails. Example:
-
-        >>> queue.put_again("my message")
-        >>> queue.put_again("another message")
-
-        To put messages onto the queue in bulk, which can be significantly
-        faster if you have a large number of messages:
-
-        >>> queue.put_again("my message", "another message", "third message")
-        """
-        # if self.serializer is not None:
-        #     msgs = map(self.serializer.dumps, msgs)
-        self.__redis.rpush(self.key, *msgs)
-
     def _acknack(self, reservation_uuid, ack=False, nack=False):
         unackedqueue_name = self._get_unacked_hotqueue(str(reservation_uuid)+':*')
         if unackedqueue_name:
@@ -187,22 +172,21 @@ class HotQueue(object):
             if msg is not None and self.serializer is not None:
                 msg_tmp = self.serializer.loads(msg)
             hq_message = msg_tmp
-
             if nack:
-                print "passou aqui 1"
-                self.__redis.rpush(key_for_name(hq_message.get_queueName()), msg)
-                print "passou aqui 2"
+                original_queue = key_for_name(hq_message.get_queueName())
+                hq_message.inc_deliveryCount()
+                if self.serializer is not None:
+                    msg = self.serializer.dumps(hq_message)
+                self.__redis.lpush(original_queue, msg)
             self.__redis.delete(key_for_name(unackedqueue_name))
             return hq_message
         else:
             return None
 
     def ack(self, reservation_uuid):
-        print "ack called"
         return self._acknack(reservation_uuid, ack=True, nack=False)
 
     def nack(self, reservation_uuid):
-        print "nack called"
         return self._acknack(reservation_uuid, ack=False, nack=True)
 
     def worker(self, *args, **kwargs):

@@ -83,6 +83,22 @@ class HotQueueTestCase(unittest.TestCase):
         self.assertEqual(msgs, nums_added)
         for msg in msgs:
             self.queue.ack(msg.get_reservationId())
+
+    def test_nack(self):
+        """Test the consume generator method."""
+        nums_added = self.queue.put("1")
+        msg = self.queue.get() #1
+        self.assertEqual(msg, nums_added[0])
+        self.queue.nack(msg.get_reservationId())
+        msg = self.queue.get() #2
+        self.assertEqual(msg, nums_added[0])
+        self.queue.nack(msg.get_reservationId())
+        msg = self.queue.get() #3
+        if msg:
+            self.assertEqual(msg, nums_added[0])
+            self.queue.ack(msg.get_reservationId())
+        self.assertEqual(msg, nums_added[0])
+        self.assertEqual(msg.get_deliveryCount(),3) #3
     
     def test_cleared(self):
         """Test for correct behaviour if the Redis list does not exist."""
