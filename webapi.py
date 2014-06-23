@@ -83,8 +83,6 @@ def acknack(reservation_uuid):
     if 'PUT' in request.method:
         nack = True
 
-    print nack
-
     if nack:
         msg = hq.nack(reservation_uuid)
     else:
