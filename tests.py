@@ -73,12 +73,16 @@ class HotQueueTestCase(unittest.TestCase):
         for msg in self.queue.consume(timeout=1):
             msgs.append(msg)
         self.assertEqual(msgs, nums_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
         # Test non-blocking:
         nums_added = self.queue.put(*nums)
         msgs = []
         for msg in self.queue.consume(block=False):
             msgs.append(msg)
         self.assertEqual(msgs, nums_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
     
     def test_cleared(self):
         """Test for correct behaviour if the Redis list does not exist."""
@@ -99,7 +103,9 @@ class HotQueueTestCase(unittest.TestCase):
         msgs.append(self.queue.get())
         msgs.append(self.queue.get())
         self.assertEqual(msgs, msg_added)
-    
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
+
     def test_length(self):
         """Test that the length of a queue is returned correctly."""
         self.queue.put('a message')
@@ -117,6 +123,8 @@ class HotQueueTestCase(unittest.TestCase):
             msgs.append(msg)
         appender()
         self.assertEqual(msgs, msg_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
         # Test non-blocking:
         msg_added = self.queue.put(*colors)
         msgs = []
@@ -125,6 +133,8 @@ class HotQueueTestCase(unittest.TestCase):
             msgs.append(msg)
         appender()
         self.assertEqual(msgs, msg_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
         # Test decorating a class method:
         msg_added = self.queue.put(*colors)
         msgs = []
@@ -135,6 +145,8 @@ class HotQueueTestCase(unittest.TestCase):
         my_instance = MyClass()
         my_instance.appender()
         self.assertEqual(msgs, msg_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
     
     def test_threaded(self):
         """Threaded test of put and consume methods."""
@@ -154,6 +166,8 @@ class HotQueueTestCase(unittest.TestCase):
         for thread in [putter, consumer]:
             thread.join()
         self.assertEqual(msgs, msg_added)
+        for msg in msgs:
+            self.queue.ack(msg.get_reservationId())
     
     # def test_custom_serializer(self):
     #     """Test the use of a custom serializer and None as serializer."""

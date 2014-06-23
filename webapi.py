@@ -73,29 +73,30 @@ def get(queuename):
 @check_uuid
 def acknack(reservation_uuid):
     returncode = 200
-    message_envelope = None
-    access = HotQueue("access", host="localhost", port=6379, db=0)
-    if access.get_unackedqueues(str(reservation_uuid)+':*'):
-        unackedqueue_name = access.get_unackedqueues(str(reservation_uuid)+':*')[0].replace('hotqueue:','')
-        unackedqueue = HotQueue(unackedqueue_name, host="localhost", port=6379, db=0)
-        message_envelope = Message()
-        message_envelope = unackedqueue.get()
-        if message_envelope:
-            nack = False
-            if 'nack' in request.path:
-                nack = True
-            if 'PUT' in request.method:
-                nack = True
-            if nack:
-                originalqueue = HotQueue(message_envelope.get_originalqueue(), host="localhost", port=6379, db=0)
-                message_envelope.inc_retries()
-                originalqueue.put_again(message_envelope)
-        else:
-            returncode = 204
-        unackedqueue.clear()
+    returnmsg = ''
+    hq = HotQueue(host="localhost", port=6379, db=0)
+    msg = None
+
+    nack = False
+    if 'nack' in request.path:
+        nack = True
+    if 'PUT' in request.method:
+        nack = True
+
+    print nack
+
+    if nack:
+        msg = hq.nack(reservation_uuid)
+    else:
+        msg = hq.ack(reservation_uuid)
+
+    if msg:
+        hqmessage = HQMessage()
+        hqmessage = msg
+        returnmsg = hqmessage.to_json()
     else:
         returncode = 400
-    return message_envelope.json(), returncode
+    return returnmsg, returncode
 
 
 @app.route("/fixunacked")

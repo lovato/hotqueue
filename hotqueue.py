@@ -24,21 +24,8 @@ __version__ = '0.2.8.dev.lovato'
 
 def key_for_name(name):
     """Return the key name used to store the given queue name in Redis."""
+    name = name.replace('hotqueue:','')
     return 'hotqueue:%s' % name
-
-class HotQueueAdmin(object):
-
-    def __init__(self, redis_connection=None, **kwargs):
-        if redis_connection:
-            self.__redis = redis_connection
-        else:
-            self.__redis = Redis(**kwargs)
-
-    def get_hotqueues(self):
-        return self.__redis.keys(key_for_name("*"))
-
-    def get_unacked_hotqueues(self,wildcard="*"):
-        return self.__redis.keys(key_for_name("unacked:"+wildcard))
 
 
 class HotQueue(object):
@@ -58,7 +45,7 @@ class HotQueue(object):
         :attr:`host`, :attr:`port`, :attr:`db`
     """
     
-    def __init__(self, name, serializer=pickle, redis_connection=None, **kwargs):
+    def __init__(self, name='adminaccess', serializer=pickle, redis_connection=None, **kwargs):
         self.group_name = kwargs.pop("group", "hotqueue")
         self.name = name
         self.serializer = serializer
@@ -69,6 +56,16 @@ class HotQueue(object):
     
     def __len__(self):
         return self.__redis.llen(self.key)
+
+    def _get_hotqueues(self, wildcard="*"):
+        return self.__redis.keys(key_for_name(wildcard))
+
+    def _get_unacked_hotqueue(self,wildcard="*"):
+        queues = self._get_hotqueues("unacked:"+wildcard)
+        if queues:
+            return queues[0].replace('hotqueue:','')
+        else:
+            return None
     
     @property
     def key(self):
@@ -136,7 +133,7 @@ class HotQueue(object):
         hq_message = msg_tmp
         if msg:
             hq_message.reserve_message()
-            self.__redis.rpush("unacked:"+hq_message.get_senderId()+":"+str(hq_message.get_expiration()), msg)
+            self.__redis.rpush(key_for_name("unacked:"+hq_message.get_reservationId()+":"+str(hq_message.get_expiration())), msg)
         self.__redis.delete(process_queue)
         return hq_message
 
@@ -180,6 +177,33 @@ class HotQueue(object):
         # if self.serializer is not None:
         #     msgs = map(self.serializer.dumps, msgs)
         self.__redis.rpush(self.key, *msgs)
+
+    def _acknack(self, reservation_uuid, ack=False, nack=False):
+        unackedqueue_name = self._get_unacked_hotqueue(str(reservation_uuid)+':*')
+        if unackedqueue_name:
+            msg = self.__redis.rpop(key_for_name(unackedqueue_name))
+            hq_message = HQMessage()
+            msg_tmp = msg
+            if msg is not None and self.serializer is not None:
+                msg_tmp = self.serializer.loads(msg)
+            hq_message = msg_tmp
+
+            if nack:
+                print "passou aqui 1"
+                self.__redis.rpush(key_for_name(hq_message.get_queueName()), msg)
+                print "passou aqui 2"
+            self.__redis.delete(key_for_name(unackedqueue_name))
+            return hq_message
+        else:
+            return None
+
+    def ack(self, reservation_uuid):
+        print "ack called"
+        return self._acknack(reservation_uuid, ack=True, nack=False)
+
+    def nack(self, reservation_uuid):
+        print "nack called"
+        return self._acknack(reservation_uuid, ack=False, nack=True)
 
     def worker(self, *args, **kwargs):
         """Decorator for using a function as a queue worker. Example:
@@ -280,6 +304,9 @@ class HQMessage(object):
         self.reservationId = str(uuid4())
         return True
 
+    def get_reservationId(self):
+        return self.reservationId
+
     def get_senderId(self):
         return self.senderId
 
@@ -297,12 +324,6 @@ class HQMessage(object):
         self.set_reservationId()        
         self.inc_deliveryCount()
         self.set_expiration()
-
-    def ack(self):
-        pass
-
-    def nack(self):
-        pass
 
     def is_old(self):
         if (time.time() - self.createdAt) >= self._default_expiration: #seconds
