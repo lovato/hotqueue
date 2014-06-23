@@ -45,10 +45,13 @@ class HotQueue(object):
         :attr:`host`, :attr:`port`, :attr:`db`
     """
     
-    def __init__(self, name='adminaccess', serializer=pickle, redis_connection=None, **kwargs):
+    def __init__(self, name='adminaccess', serializer=pickle, redis_connection=None, originIPAddress=None, senderName=None, **kwargs):
         self.group_name = kwargs.pop("group", "hotqueue")
         self.name = name
         self.serializer = serializer
+        self.senderName = senderName
+        self.originIPAddress = originIPAddress
+
         if redis_connection:
             self.__redis = redis_connection
         else:
@@ -133,7 +136,7 @@ class HotQueue(object):
         hq_message = msg_tmp
         if msg:
             hq_message.reserve_message()
-            self.__redis.rpush(key_for_name("unacked:"+hq_message.get_reservationId()+":"+str(hq_message.get_expiration())), msg)
+            self.__redis.rpush(key_for_name("unacked:"+hq_message.get_reservationId()+":"+str(hq_message.get_expiration())), self.serializer.dumps(hq_message))
         self.__redis.delete(process_queue)
         return hq_message
 
@@ -152,6 +155,11 @@ class HotQueue(object):
         """
         for msg in msgs:
             hq_message = HQMessage(msg,self.name)
+            if self.originIPAddress:
+                hq_message.set_originIPAddress(self.originIPAddress)
+            if self.senderName:
+                hq_message.set_senderName(self.senderName)
+
             if self.serializer is not None:
                 hq_message_list.append(self.serializer.dumps(hq_message))
             else:
@@ -174,9 +182,9 @@ class HotQueue(object):
             hq_message = msg_tmp
             if nack:
                 original_queue = key_for_name(hq_message.get_queueName())
-                hq_message.inc_deliveryCount()
-                if self.serializer is not None:
-                    msg = self.serializer.dumps(hq_message)
+                #hq_message.inc_deliveryCount()
+                #if self.serializer is not None:
+                #    msg = self.serializer.dumps(hq_message)
                 self.__redis.lpush(original_queue, msg)
             self.__redis.delete(key_for_name(unackedqueue_name))
             return hq_message
@@ -279,14 +287,14 @@ class HQMessage(object):
 
     def set_expiration(self):
         self.expiration = time.time() + self._default_expiration
-        return True
+        return self.expiration
 
     def get_expiration(self):
         return self.expiration
 
     def set_reservationId(self):
         self.reservationId = str(uuid4())
-        return True
+        return self.reservationId
 
     def get_reservationId(self):
         return self.reservationId
@@ -302,7 +310,13 @@ class HQMessage(object):
 
     def inc_deliveryCount(self):
         self.deliveryCount = self.deliveryCount + 1
-        return True
+        return self.deliveryCount
+
+    def set_originIPAddress(self, originIPAddress):
+        self.originIPAddress = originIPAddress
+
+    def set_senderName(self, senderName):
+        self.senderName = senderName
 
     def reserve_message(self):
         self.set_reservationId()        
@@ -332,4 +346,6 @@ class HQMessage(object):
         result['messageId']=self.messageId
         result['queueName']=self.queueName
         result['reservationId']=self.reservationId
+        result['originIPAddress']=self.originIPAddress
+        result['senderName']=self.senderName
         return json.dumps(result, ensure_ascii=False)

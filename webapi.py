@@ -32,12 +32,13 @@ def is_unacked_old(queue):
 
 @app.route("/queues/<queuename>", methods=['POST'])
 @app.route("/queues/<queuename>/messages/<message>", methods=['PUT'])
-def put(queuename,message=None):
+@app.route("/queues/<queuename>/messages/<message>/from/<senderName>", methods=['PUT'])
+def put(queuename,message=None,senderName=None):
     returncode = 200
     if not message:
         message = str(request.form['body'])
     if message:
-        queue = HotQueue(queuename, host="localhost", port=6379, db=0)
+        queue = HotQueue(queuename, senderName=senderName, originIPAddress=request.remote_addr, host="localhost", port=6379, db=0)
         put_status = HQMessage()
         put_status = queue.put(message)[0]
     else:

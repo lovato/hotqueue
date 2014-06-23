@@ -98,6 +98,7 @@ class HotQueueTestCase(unittest.TestCase):
             self.assertEqual(msg, nums_added[0])
             self.queue.ack(msg.get_reservationId())
         self.assertEqual(msg, nums_added[0])
+        self.assertEqual(len(self.queue), 0)
         self.assertEqual(msg.get_deliveryCount(),3) #3
     
     def test_cleared(self):
